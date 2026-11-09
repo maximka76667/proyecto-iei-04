@@ -223,8 +223,8 @@ def map_row(source: str, raw: dict) -> Mapped:
         out.accepted = False
         out.note(name_field, "nombre_obligatorio", "error", "Registro descartado: no tiene nombre")
 
-    ent = dict(id_entidad=f"{source}-{raw_id}" if raw_id else None, fuente=source,
-               id_origen=raw_id, nombre=name, ambito=None, direccion=None,
+    # cod_entidad es autonumérico en el almacén; aquí solo se conserva el id de origen.
+    ent = dict(fuente=source, id_origen=raw_id, nombre=name, ambito=None, direccion=None,
                codigo_postal=None, longitud=None, latitud=None,
                descripcion=None, contacto=None, url=None)
     loc = {"codigo": None, "nombre": None}

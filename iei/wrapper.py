@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import os
 from fastapi import FastAPI, HTTPException, Query
-from .sources import FILENAMES, load_source
+from .sources import FILENAMES, load_read_errors, load_source
 
 app = FastAPI(title="IEI – Wrapper de fuente", version="2.0", description="Expone registros originales sin transformación semántica.")
 
@@ -48,3 +48,14 @@ def records(page: int = Query(1, ge=1), page_size: int = Query(250, ge=1, le=500
     start = (page - 1) * page_size
     return {"source": source, "page": page, "page_size": page_size, "total": len(rows),
             "records": rows[start:start + page_size]}
+
+
+@app.get("/read-errors", tags=["Fuente"])
+def read_errors():
+    """Filas del fichero que no se han podido leer (no aparecen en /records)."""
+    source = current_source()
+    try:
+        errors = load_read_errors(source)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"source": source, "total": len(errors), "errors": list(errors)}
