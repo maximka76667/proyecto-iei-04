@@ -101,50 +101,40 @@ Abrir **http://127.0.0.1:8000** en el navegador. Swagger interactivo: **http://1
 
 > La base de datos `data/integrador.sqlite3` no se versiona: se crea en la primera carga. Al cargar otra vez, el proceso es idempotente y comprueba registros sin cambios. Puedes borrar el fichero SQLite (con los servidores parados) para probar la primera carga desde cero.
 
-## 2. Alternativa mediante Docker Compose
-
-```bash
-docker compose up --build
-```
-
-Acceder a **http://localhost:8000** y pulsar **Administrar datos → Ejecutar carga ETL**. Docker crea un volumen `iei_database` persistente. Los wrappers `can`, `cat` y `cv` se comunican por HTTP con `integrador` dentro de la red Compose. No necesitas Python local si usas Docker.
-
-## 3. Estructura del proyecto
+## 2. Estructura del proyecto
 
 ```text
-IEI_Entrega2/
+proyecto-iei-04/
 ├── iei/
-│   ├── wrapper.py          # Wrapper HTTP genérico desplegado 3 veces
+│   ├── wrapper.py          # Wrapper HTTP genérico desplegado 3 veces (uno por fuente)
 │   ├── sources.py          # Lectores CSV, XML, JSON de las fuentes originales
+│   ├── extractor.py        # Extractores: piden los registros a los wrappers por HTTP
 │   ├── mapping.py          # Mappings semánticos y validaciones
-│   ├── database.py         # Almacén relacional, ETL, calidad y consultas
-│   └── api.py              # Backend HTTP, búsqueda, carga, mapa, coordenadas
-├── frontend/
-│   ├── index.html          # Formularios, tarjetas, panel de auditoría
-│   ├── styles.css          # Interfaz adaptable
-│   └── app.js              # Cliente REST y OpenLayers
+│   ├── database.py         # Almacén relacional, carga, calidad y consultas
+│   ├── pipeline.py         # Entrega 1: wrappers -> extracción -> mapping -> carga (demo y tests)
+│   └── api.py              # Entrega 2: backend HTTP, búsqueda, carga, mapa
+├── frontend/               # Entrega 2: formularios y mapa OpenLayers
 ├── data/
-│   ├── sources/
-│   │   ├── cv.csv          # Datos CV reales del ZIP
-│   │   ├── cat.xml         # Datos CAT reales del ZIP
-│   │   └── can.json        # Datos CAN reales del ZIP
-│   └── integrador.sqlite3  # BBDD inicial de demostración
+│   ├── sources/            # Datos reales: cv.csv, cat.xml, can.json
+│   └── samples/            # Muestras pequeñas con casos de prueba + casos.json
 ├── docs/
+│   ├── pendiente_entrega1.md          # Lo que falta para la Entrega 1
+│   ├── preguntas_profesor.md
+│   ├── esquema_global.sql
+│   ├── ETL_y_calidad.md
 │   ├── arquitectura.md
 │   ├── API.md
-│   ├── ETL_y_calidad.md
 │   ├── DEMOSTRACION.md
-│   ├── esquema_global.sql
 │   ├── enunciado.pdf
-│   └── mapping_semantico_equipo4.pdf
-├── tests/                  # Pruebas unitarias y de integración
-├── run_demo.py
-├── compose.yaml
-├── Dockerfile
+│   ├── mapping_semantico_equipo4.pdf  # Mapping entregado
+│   └── mapping_corregido.pdf          # Mapping con las correcciones del profesor
+├── tests/                  # Pruebas unitarias y de extremo a extremo (test_samples.py)
+├── demo_entrega-1.py       # Demo de la Entrega 1
+├── run_demo.py             # Aplicación completa (Entrega 2)
 └── requirements.txt
 ```
 
-## 4. Funcionalidades entregadas
+## 3. Funcionalidades entregadas
 
 - Lectura **JSON Canarias / XML Catalunya / CSV Comunitat Valenciana** con wrappers independientes por HTTP, paginación y esquema disponible en `/schema`.
 - Extractores que consultan los wrappers por HTTP y aplican el mapping del equipo 4, sin saltarse la capa de wrappers.
@@ -157,7 +147,7 @@ IEI_Entrega2/
 - Documentación OpenAPI/Swagger autogenerada (`/docs`) y guía de endpoints.
 - Pruebas automáticas: `python -m pytest -q`.
 
-## 5. Resultado real sobre los datasets originales
+## 4. Resultado real sobre los datasets originales
 
 | Fuente | Leídos | Únicos guardados | Descartados |
 | --- | ---: | ---: | ---: |
@@ -170,11 +160,11 @@ Se detectaron **61 identificadores repetidos dentro de Canarias**: se retiene la
 
 La fuente catalana contiene gran número de emails y URLs mal formados: se conservan los valores originales en la columna `raw_json` y se reportan las incidencias en la auditoría, en vez de inventar puntos o letras. Algunos mappings CAN son propuestas pendientes de confirmación, por lo que esos ámbitos quedan sin clasificar (`NULL`).
 
-## 6. Cómo presentar la demostración
+## 5. Cómo presentar la demostración
 
 Consulta `docs/DEMOSTRACION.md` para una secuencia de demo de 5 minutos, incluido un ejemplo de reparación y una carga repetida sin duplicados. Consultar detalles técnicos en `docs/ETL_y_calidad.md` y `docs/arquitectura.md`.
 
-## 7. Limitaciones y decisiones justificadas
+## 6. Limitaciones y decisiones justificadas
 
 1. **Esquema global oficial no aportado:** en el ZIP sí aparece el enunciado y el mapping del equipo, pero **no el esquema formal suministrado por la asignatura**. Se ha implementado un **esquema relacional inferido** de los campos `E`, `L` y `P` descritos en el mapping. Si el profesorado entrega un DDL canónico distinto, hay que alinearlo antes de la entrega.
 2. **Geolocalización faltante:** CAT y CAN carecen de coordenadas originales. Geocodificarlos requeriría una fuente adicional, validación de coincidencia y registrar procedencia/precisión. No se ha realizado una geocodificación no verificable.
@@ -183,6 +173,6 @@ Consulta `docs/DEMOSTRACION.md` para una secuencia de demo de 5 minutos, incluid
 5. **SQLite:** elegida por portabilidad para la demo; no es un despliegue multiusuario de producción. Las consultas geográficas se hacen con rango/bbox sobre índices, sin PostGIS. Si el esquema global oficial exige otro motor, puede migrarse el repositorio de acceso a datos.
 6. **Seguridad:** esta es una herramienta académica para entorno local; `/api/load` no tiene autenticación. No debe exponerse a Internet sin protección y sin limitar acciones de escritura.
 
-## 8. Reprobar los casos con datos de evaluación
+## 7. Reprobar los casos con datos de evaluación
 
 Sustituir, con servidores detenidos, los ficheros `data/sources/cv.csv`, `cat.xml`, `can.json` por los de evaluación **con el mismo formato**. El wrapper detecta cambios de mtime/tamaño y los lee de nuevo. Los datos previos permanecen hasta reiniciar la BD o actualizar por ID (no hay borrado en cargas incrementales). Antes de evaluar un dataset íntegramente nuevo, borrar/renombrar `data/integrador.sqlite3` para una base limpia. Se rechazan registros sin ID/nombre o duplicados de lote; se registran incidencias de los demás casos.
