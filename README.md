@@ -9,13 +9,89 @@ Requisitos: **Python 3.10+**, conexión a Internet para los mosaicos del mapa y 
 
 Desde esta carpeta:
 
+1. Comprobar que pip está instalado (normalmente viene con Python):
+
+   ```bash
+   python -m pip --version
+   ```
+
+   Solo si responde `No module named pip`:
+
+   ```bash
+   python -m ensurepip --upgrade
+   ```
+
+2. Crear y activar el entorno virtual (`.venv/` está en `.gitignore`):
+
+   ```bash
+   python -m venv .venv
+   # Windows PowerShell:
+   .venv\Scripts\Activate.ps1
+   # Linux / macOS:
+   source .venv/bin/activate
+   ```
+
+   El prompt debe empezar por `(.venv)`. Si PowerShell responde que la ejecución de scripts está deshabilitada, ejecutar una vez lo siguiente y volver a activar:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+   En cada terminal nueva hay que volver a activar el entorno.
+
+3. Instalar las dependencias:
+
+   ```bash
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
+   ```
+
+4. Ejecutar las pruebas:
+
+   ```bash
+   python -m pytest -q
+   ```
+
+   Lo normal es ver todo en verde (`passed`) más varios `xfailed`. Los `xfailed` son casos de `data/samples/casos.json` marcados como **pendiente**: comportamiento acordado que aún no está implementado, así que se espera que fallen. Si alguno sale `XPASS` (pasa sin esperarlo), ya está implementado y hay que quitar su marca `pendiente`. Un `FAILED` sí es un error.
+
+   Para ver el detalle de un fichero: `python -m pytest tests/test_samples.py -v`.
+
+5. Ejecutar la demo de la Entrega 1 (wrappers → extracción por HTTP → mappings → carga → informe):
+
+   ```bash
+   python demo_entrega-1.py
+   ```
+
+   Arranca un wrapper HTTP por fuente (puertos **8101 CAN, 8102 CAT, 8103 CV**), extrae los registros por HTTP, aplica los mappings, carga en `data/demo_entrega-1.sqlite3` (se crea vacía en cada ejecución) e imprime qué ha pasado con cada registro: cargado, reparado, con datos inválidos, con avisos o rechazado. Al terminar detiene los wrappers.
+
+   | Opción | Efecto |
+   | --- | --- |
+   | `--sources CV CAT CAN` | Fuentes a cargar (por defecto, las tres) |
+   | `--data-dir CARPETA` | Carpeta con `cv.csv`, `cat.xml` y `can.json` (por defecto `data/sources`) |
+   | `--keep-db` | No vaciar la base de datos: al repetir la carga se ve que no duplica (“sin cambios”) |
+   | `--sample N` | Registros de ejemplo a mostrar por fuente (0 para ninguno) |
+   | `--db FICHERO` | Otra base de datos |
+   | `--no-color` | Sin colores, p. ej. para guardar la salida: `python demo_entrega-1.py --no-color > demo.txt` |
+
+   Ejemplos:
+
+   ```bash
+   python demo_entrega-1.py --data-dir data/samples     # muestras pequeñas con casos de error
+   python demo_entrega-1.py --sources CV --sample 0     # solo CV, sin registros de ejemplo
+   python demo_entrega-1.py --data-dir ruta/a/evaluacion  # ficheros de evaluación del profesor
+   ```
+
+   Si aparece «puerto ocupado», hay otro wrapper en marcha (p. ej. de `run_demo.py`): cerrarlo y repetir.
+
+### Datos de prueba (`data/samples`)
+
+`data/samples/` contiene versiones pequeñas de las tres fuentes, escritas a mano: registros reales copiados de `data/sources` (sin modificar los originales) más casos construidos para provocar un comportamiento concreto (filas ilegibles, ids vacíos o repetidos, códigos postales e INE inválidos, coordenadas ausentes o incoherentes, URLs y emails mal formados, marcadores `_U`, etc.).
+
+`data/samples/casos.json` describe qué se espera de cada caso; `tests/test_samples.py` ejecuta el mismo pipeline que la demo (`iei/pipeline.py`) sobre estas muestras y lo comprueba. Para añadir un caso: añadir el registro a la muestra correspondiente y su entrada en `casos.json` (la `fila` es la posición del registro, sin contar cabecera ni filas ilegibles).
+
+### Aplicación completa (Entrega 2)
+
 ```bash
-python -m venv .venv
-# Linux / macOS:
-source .venv/bin/activate
-# Windows PowerShell:
-# .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
 python run_demo.py
 ```
 
@@ -23,52 +99,42 @@ Abrir **http://127.0.0.1:8000** en el navegador. Swagger interactivo: **http://1
 
 `run_demo.py` arranca 4 servidores HTTP, ejecuta automáticamente la carga de los 3 datasets y muestra los resultados. Para iniciar sin ejecutar una carga nueva: `python run_demo.py --no-load`. Para detener todos los servicios, `Ctrl+C`.
 
-> La base de datos `data/integrador.sqlite3` se incluye precargada como **snapshot de demostración**. Al cargar otra vez, el proceso es idempotente y comprueba registros sin cambios. Puedes borrar el fichero SQLite (con los servidores parados) para probar la primera carga desde cero.
+> La base de datos `data/integrador.sqlite3` no se versiona: se crea en la primera carga. Al cargar otra vez, el proceso es idempotente y comprueba registros sin cambios. Puedes borrar el fichero SQLite (con los servidores parados) para probar la primera carga desde cero.
 
-## 2. Alternativa mediante Docker Compose
-
-```bash
-docker compose up --build
-```
-
-Acceder a **http://localhost:8000** y pulsar **Administrar datos → Ejecutar carga ETL**. Docker crea un volumen `iei_database` persistente. Los wrappers `can`, `cat` y `cv` se comunican por HTTP con `integrador` dentro de la red Compose. No necesitas Python local si usas Docker.
-
-## 3. Estructura del proyecto
+## 2. Estructura del proyecto
 
 ```text
-IEI_Entrega2/
+proyecto-iei-04/
 ├── iei/
-│   ├── wrapper.py          # Wrapper HTTP genérico desplegado 3 veces
+│   ├── wrapper.py          # Wrapper HTTP genérico desplegado 3 veces (uno por fuente)
 │   ├── sources.py          # Lectores CSV, XML, JSON de las fuentes originales
+│   ├── extractor.py        # Extractores: piden los registros a los wrappers por HTTP
 │   ├── mapping.py          # Mappings semánticos y validaciones
-│   ├── database.py         # Almacén relacional, ETL, calidad y consultas
-│   └── api.py              # Backend HTTP, búsqueda, carga, mapa, coordenadas
-├── frontend/
-│   ├── index.html          # Formularios, tarjetas, panel de auditoría
-│   ├── styles.css          # Interfaz adaptable
-│   └── app.js              # Cliente REST y OpenLayers
+│   ├── database.py         # Almacén relacional, carga, calidad y consultas
+│   ├── pipeline.py         # Entrega 1: wrappers -> extracción -> mapping -> carga (demo y tests)
+│   └── api.py              # Entrega 2: backend HTTP, búsqueda, carga, mapa
+├── frontend/               # Entrega 2: formularios y mapa OpenLayers
 ├── data/
-│   ├── sources/
-│   │   ├── cv.csv          # Datos CV reales del ZIP
-│   │   ├── cat.xml         # Datos CAT reales del ZIP
-│   │   └── can.json        # Datos CAN reales del ZIP
-│   └── integrador.sqlite3  # BBDD inicial de demostración
+│   ├── sources/            # Datos reales: cv.csv, cat.xml, can.json
+│   └── samples/            # Muestras pequeñas con casos de prueba + casos.json
 ├── docs/
+│   ├── pendiente_entrega1.md          # Lo que falta para la Entrega 1
+│   ├── preguntas_profesor.md
+│   ├── esquema_global.sql
+│   ├── ETL_y_calidad.md
 │   ├── arquitectura.md
 │   ├── API.md
-│   ├── ETL_y_calidad.md
 │   ├── DEMOSTRACION.md
-│   ├── esquema_global.sql
 │   ├── enunciado.pdf
-│   └── mapping_semantico_equipo4.pdf
-├── tests/                  # Pruebas unitarias y de integración
-├── run_demo.py
-├── compose.yaml
-├── Dockerfile
+│   ├── mapping_semantico_equipo4.pdf  # Mapping entregado
+│   └── mapping_corregido.pdf          # Mapping con las correcciones del profesor
+├── tests/                  # Pruebas unitarias y de extremo a extremo (test_samples.py)
+├── demo_entrega-1.py       # Demo de la Entrega 1
+├── run_demo.py             # Aplicación completa (Entrega 2)
 └── requirements.txt
 ```
 
-## 4. Funcionalidades entregadas
+## 3. Funcionalidades entregadas
 
 - Lectura **JSON Canarias / XML Catalunya / CSV Comunitat Valenciana** con wrappers independientes por HTTP, paginación y esquema disponible en `/schema`.
 - Extractores que consultan los wrappers por HTTP y aplican el mapping del equipo 4, sin saltarse la capa de wrappers.
@@ -81,7 +147,7 @@ IEI_Entrega2/
 - Documentación OpenAPI/Swagger autogenerada (`/docs`) y guía de endpoints.
 - Pruebas automáticas: `python -m pytest -q`.
 
-## 5. Resultado real sobre los datasets originales
+## 4. Resultado real sobre los datasets originales
 
 | Fuente | Leídos | Únicos guardados | Descartados |
 | --- | ---: | ---: | ---: |
@@ -94,11 +160,11 @@ Se detectaron **61 identificadores repetidos dentro de Canarias**: se retiene la
 
 La fuente catalana contiene gran número de emails y URLs mal formados: se conservan los valores originales en la columna `raw_json` y se reportan las incidencias en la auditoría, en vez de inventar puntos o letras. Algunos mappings CAN son propuestas pendientes de confirmación, por lo que esos ámbitos quedan sin clasificar (`NULL`).
 
-## 6. Cómo presentar la demostración
+## 5. Cómo presentar la demostración
 
 Consulta `docs/DEMOSTRACION.md` para una secuencia de demo de 5 minutos, incluido un ejemplo de reparación y una carga repetida sin duplicados. Consultar detalles técnicos en `docs/ETL_y_calidad.md` y `docs/arquitectura.md`.
 
-## 7. Limitaciones y decisiones justificadas
+## 6. Limitaciones y decisiones justificadas
 
 1. **Esquema global oficial no aportado:** en el ZIP sí aparece el enunciado y el mapping del equipo, pero **no el esquema formal suministrado por la asignatura**. Se ha implementado un **esquema relacional inferido** de los campos `E`, `L` y `P` descritos en el mapping. Si el profesorado entrega un DDL canónico distinto, hay que alinearlo antes de la entrega.
 2. **Geolocalización faltante:** CAT y CAN carecen de coordenadas originales. Geocodificarlos requeriría una fuente adicional, validación de coincidencia y registrar procedencia/precisión. No se ha realizado una geocodificación no verificable.
@@ -107,6 +173,6 @@ Consulta `docs/DEMOSTRACION.md` para una secuencia de demo de 5 minutos, incluid
 5. **SQLite:** elegida por portabilidad para la demo; no es un despliegue multiusuario de producción. Las consultas geográficas se hacen con rango/bbox sobre índices, sin PostGIS. Si el esquema global oficial exige otro motor, puede migrarse el repositorio de acceso a datos.
 6. **Seguridad:** esta es una herramienta académica para entorno local; `/api/load` no tiene autenticación. No debe exponerse a Internet sin protección y sin limitar acciones de escritura.
 
-## 8. Reprobar los casos con datos de evaluación
+## 7. Reprobar los casos con datos de evaluación
 
 Sustituir, con servidores detenidos, los ficheros `data/sources/cv.csv`, `cat.xml`, `can.json` por los de evaluación **con el mismo formato**. El wrapper detecta cambios de mtime/tamaño y los lee de nuevo. Los datos previos permanecen hasta reiniciar la BD o actualizar por ID (no hay borrado en cargas incrementales). Antes de evaluar un dataset íntegramente nuevo, borrar/renombrar `data/integrador.sqlite3` para una base limpia. Se rechazan registros sin ID/nombre o duplicados de lote; se registran incidencias de los demás casos.

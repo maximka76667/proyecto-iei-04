@@ -20,7 +20,8 @@ def test_empty_marker_only_when_field_is_unknown():
 def test_cv_mapping_and_coordinate_conversion():
     out = map_row('CV', load_source('CV')[0])
     assert out.accepted
-    assert out.entity['id_entidad'] == 'CV-1'
+    assert 'id_entidad' not in out.entity  # autonumérico, lo asigna el almacén
+    assert out.entity['id_origen'] == '1'
     assert out.locality['codigo'] == '03903'
     assert out.province['codigo'] == '03'
     assert out.entity['ambito'] == 'INCLUSION_SOCIAL'
@@ -55,7 +56,7 @@ def test_coordinate_converter_rejects_out_of_bounds():
 
 def test_cat_semantics_postal_and_no_geo():
     out = map_row('CAT', load_source('CAT')[0])
-    assert out.entity['id_entidad'] == 'CAT-306'
+    assert out.entity['id_origen'] == '306'
     assert out.entity['ambito'] is None
     assert out.entity['codigo_postal'] == '08172'
     assert out.province == {'codigo':'08','nombre':'Barcelona'}
@@ -65,7 +66,7 @@ def test_cat_semantics_postal_and_no_geo():
 
 def test_can_semantics_and_invalid_website():
     out = map_row('CAN',load_source('CAN')[0])
-    assert out.entity['id_entidad'] == 'CAN-ERE1986CA00001'
+    assert out.entity['id_origen'] == 'ERE1986CA00001'
     assert out.entity['ambito'] == 'DISCAPACIDAD'
     assert out.entity['url'] is None  # 'wwwadepsi.org' no se repara arbitrariamente
     assert out.entity['longitud'] is None

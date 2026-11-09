@@ -35,7 +35,7 @@
 
 ## Esquema global inferido
 
-**E: Entidad** (`entidades`) — `id_entidad` PK (`CV-…`, `CAT-…`, `CAN-…`), `fuente`, `id_origen`, `nombre`, `ambito`, `direccion`, `codigo_postal`, `longitud`, `latitud`, `descripcion`, `contacto`, `url`, FKs a L/P, búsqueda normalizada, registro original y huella idempotente.
+**E: Entidad** (`entidades`) — `id_entidad` PK autonumérica, `fuente`, `id_origen` (únicos juntos), `nombre`, `ambito`, `direccion`, `codigo_postal`, `longitud`, `latitud`, `descripcion`, `contacto`, `url`, FKs a L/P, búsqueda normalizada, registro original y huella idempotente.
 
 **L: Localidad** (`localidades`) — `codigo` INE cuando existe, `nombre`, FK a provincia. Como Catalunya no incluye INE, se usa clave interna estable compuesta por fuente + provincia + nombre, pero **L.codigo se deja NULL**, siguiendo el mapping.
 

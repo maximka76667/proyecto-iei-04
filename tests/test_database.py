@@ -4,6 +4,17 @@ from iei.database import (process_source, search_entities, get_entity,
 from iei.sources import load_source
 
 
+def by_origin(file, fuente, id_origen):
+    """id_entidad es autonumérico: localizar la entidad por su id de origen."""
+    conn = sqlite3.connect(file)
+    try:
+        row = conn.execute("SELECT id_entidad FROM entidades WHERE fuente=? AND id_origen=?",
+                           (fuente, id_origen)).fetchone()
+    finally:
+        conn.close()
+    return get_entity(row[0], file) if row else None
+
+
 def test_three_sources_integrate_and_idempotent(tmp_path):
     file = tmp_path / 'db.sqlite'
     for source in ('CV','CAT','CAN'):
@@ -15,9 +26,10 @@ def test_three_sources_integrate_and_idempotent(tmp_path):
     assert stats['fuentes']=={'CV':1697,'CAT':765,'CAN':749}
     assert stats['geolocalizadas'] > 1000
     assert stats['geolocalizadas'] <=1697
-    assert get_entity('CV-1',file)['nombre'].startswith('CENTRO')
-    assert get_entity('CAT-306',file)['codigo_postal']=='08172'
-    assert get_entity('CAN-ERE1986CA00001',file)['fuente']=='CAN'
+    assert by_origin(file,'CV','1')['nombre'].startswith('CENTRO')
+    assert by_origin(file,'CAT','306')['codigo_postal']=='08172'
+    assert by_origin(file,'CAN','ERE1986CA00001')['fuente']=='CAN'
+    assert isinstance(by_origin(file,'CV','1')['id_entidad'], int)
     r = process_source('CV',load_source('CV'),file)
     assert r['insertados']==0
     assert r['actualizados']==0
@@ -68,4 +80,24 @@ def test_update_changed_record(tmp_path):
     sample['nombre']='Nueva denominación'
     b=process_source('CV',[sample],file)
     assert a['insertados']==1 and b['actualizados']==1
-    assert get_entity('CV-1',file)['nombre']=='Nueva denominación'
+    updated = by_origin(file,'CV','1')
+    assert updated['nombre']=='Nueva denominación'
+
+
+def test_reload_keeps_autonumeric_id(tmp_path):
+    file=tmp_path/'x.sqlite'; sample=dict(load_source('CV')[0])
+    process_source('CV',[sample],file)
+    first=by_origin(file,'CV','1')['id_entidad']
+    sample['nombre']='Otro nombre'
+    process_source('CV',[sample],file)
+    assert by_origin(file,'CV','1')['id_entidad']==first
+
+
+def test_read_errors_are_reported_and_counted(tmp_path):
+    file=tmp_path/'x.sqlite'
+    errors=[{'line': 7, 'reason': 'Se esperaban 21 columnas y hay 3', 'raw': 'a,b,c'}]
+    out=process_source('CV',[dict(load_source('CV')[0])],file,read_errors=errors)
+    assert out['leidos']==2 and out['insertados']==1 and out['descartados']==1
+    issues=load_issues(out['carga_id'],file)['items']
+    bad=[i for i in issues if i['codigo']=='fila_ilegible']
+    assert len(bad)==1 and bad[0]['fila']==7 and bad[0]['original']=='a,b,c'

@@ -8,7 +8,7 @@ El ZIP original tiene **carpetas con nombres discordantes respecto al contenido*
 
 | Campo global | CV (CSV) | CAT (XML) | CAN (JSON) |
 |---|---|---|---|
-| E.id_entidad | `CV-` + `id` | `CAT-` + `n_mero_registre` | `CAN-` + `numero_registro` |
+| E.id_entidad | autonumérico (`id` → `id_origen`) | autonumérico (`n_mero_registre` → `id_origen`) | autonumérico (`numero_registro` → `id_origen`) |
 | E.nombre | `nombre` | `nom_de_l_entitat` | `denominacion` |
 | E.ambito | `sector` + tabla aprobada | `NULL` (sin ámbito) | `area_nombre`, sin forzar propuestas |
 | E.direccion | `domici` | `adre_a` | componentes de dirección |

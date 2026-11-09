@@ -2,7 +2,7 @@
 
 ## Antes de empezar
 
-`python run_demo.py` y abrir `http://localhost:8000` (local) o `docker compose up --build` y pulsar carga en la pestaña de administración (Docker).
+`python run_demo.py` y abrir `http://localhost:8000`.
 
 ## Demostración de funcionalidades
 

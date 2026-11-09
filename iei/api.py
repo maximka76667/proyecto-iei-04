@@ -4,7 +4,6 @@ Documentación Swagger: /docs | Especificación: /openapi.json
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -16,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from .database import (connect, process_source, search_entities, get_entity, statistics,
                        filters_metadata, loads_history, load_issues)
+from .extractor import extract_http, extract_read_errors_http, wrapper_url
 from .mapping import convert_utm
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,9 +24,6 @@ app = FastAPI(title="IEI – Integrador de entidades del Tercer Sector", version
                           "Los wrappers exponen los datos por HTTP; los extractores aplican mappings semánticos, validan y registran incidencias.")
 app.mount("/static", StaticFiles(directory=ROOT / "frontend"), name="static")
 
-DEFAULT_WRAPPERS = {"CAN": "http://127.0.0.1:8101", "CAT": "http://127.0.0.1:8102", "CV": "http://127.0.0.1:8103"}
-
-
 class LoadRequest(BaseModel):
     sources: list[Literal["CV", "CAT", "CAN"]] = Field(default_factory=lambda: ["CV", "CAT", "CAN"], min_length=1)
 
@@ -34,38 +31,6 @@ class LoadRequest(BaseModel):
 class ConvertRequest(BaseModel):
     x_25830: float
     y_25830: float
-
-
-def wrapper_url(source: str) -> str:
-    return os.environ.get("IEI_WRAPPER_" + source + "_URL", DEFAULT_WRAPPERS[source]).rstrip("/")
-
-
-def extract_http(source: str) -> list[dict]:
-    """Extractor HTTP paginado. No consulta directamente el fichero original."""
-    result = []
-    with httpx.Client(timeout=30.0, follow_redirects=False) as client:
-        page = 1
-        total = None
-        while True:
-            response = client.get(wrapper_url(source) + "/records", params={"page": page, "page_size": 500})
-            response.raise_for_status()
-            data = response.json()
-            if data.get("source") != source or not isinstance(data.get("records"), list):
-                raise ValueError("El wrapper respondió con fuente o formato inesperado")
-            if total is None:
-                total = data.get("total")
-                if not isinstance(total, int) or total < 0 or total > 1_000_000:
-                    raise ValueError("El wrapper devolvió un total no válido")
-            rows = data["records"]
-            if not rows and len(result) < total:
-                raise ValueError("El wrapper terminó antes de devolver todos los registros")
-            result.extend(rows)
-            if len(result) >= total:
-                if len(result) != total:
-                    raise ValueError("El wrapper devolvió más registros que el total declarado")
-                break
-            page += 1
-    return result
 
 
 def parse_bbox(value: str | None):
@@ -107,7 +72,8 @@ def load(req: LoadRequest):
     for source in dict.fromkeys(req.sources):
         try:
             raw_rows = extract_http(source)
-            result = process_source(source, raw_rows)
+            read_errors = extract_read_errors_http(source)
+            result = process_source(source, raw_rows, read_errors=read_errors)
             results.append({"source": source, "status": "ok", **result})
         except (httpx.HTTPError, ValueError, OSError, RuntimeError) as exc:
             results.append({"source": source, "status": "error", "message": str(exc)})

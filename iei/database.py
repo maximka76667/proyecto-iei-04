@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS localidades (
   provincia_id INTEGER REFERENCES provincias(id)
 );
 CREATE TABLE IF NOT EXISTS entidades (
-  id_entidad TEXT PRIMARY KEY,
+  id_entidad INTEGER PRIMARY KEY AUTOINCREMENT,
   fuente TEXT NOT NULL CHECK (fuente IN ('CAN','CAT','CV')),
   id_origen TEXT NOT NULL,
   nombre TEXT NOT NULL,
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS entidades (
   raw_json TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   actualizado_en TEXT NOT NULL,
+  UNIQUE (fuente, id_origen),
   CHECK ((longitud IS NULL AND latitud IS NULL) OR
          (longitud BETWEEN -180 AND 180 AND latitud BETWEEN -90 AND 90))
 );
@@ -113,30 +114,42 @@ def _upsert_geo(conn, table: str, key: str, code, name, province_id=None):
     return conn.execute(f"INSERT INTO {table} ({fields}) VALUES ({placeholders})", values).lastrowid
 
 
-def process_source(source: str, rows: list[dict] | tuple[dict, ...], db_path=None) -> dict:
+def process_source(source: str, rows: list[dict] | tuple[dict, ...], db_path=None,
+                   read_errors: list[dict] | tuple[dict, ...] = ()) -> dict:
     """Carga una fuente con UPSERT idempotente, errores por fila y resumen persistido.
 
-    Sólo se descartan registros sin id/nombre o IDs repetidos dentro de la misma
-    fuente de importación. Otros errores se reparan o se dejan en NULL.
+    `cod_entidad` (id_entidad) es autonumérico; el registro se identifica por
+    (fuente, id_origen) para que recargar actualice en lugar de duplicar.
+    Sólo se descartan registros sin id/nombre, IDs repetidos dentro de la misma
+    fuente de importación y filas ilegibles (`read_errors`, del wrapper).
+    Otros errores se reparan o se dejan en NULL.
     """
     if source not in {"CV", "CAT", "CAN"}:
         raise ValueError("Fuente no válida")
     conn = connect(db_path)
-    totals = dict(fuente=source, leidos=len(rows), insertados=0, actualizados=0,
+    totals = dict(fuente=source, leidos=len(rows) + len(read_errors), insertados=0, actualizados=0,
                   sin_cambios=0, descartados=0, incidencias=0, reparaciones=0)
     try:
         with conn:
             load_id = conn.execute("INSERT INTO cargas (fuente, fecha, registros_leidos) VALUES (?, ?, ?)",
-                                   (source, _now(), len(rows))).lastrowid
+                                   (source, _now(), totals["leidos"])).lastrowid
+            for err in read_errors:
+                conn.execute("""INSERT INTO incidencias
+                   (carga_id,fuente,fila,entidad_id,campo,codigo,gravedad,descripcion,original,reparado)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                   (load_id, source, err.get("line") or 0, None, "fila", "fila_ilegible", "error",
+                    "Registro descartado: " + str(err.get("reason")), err.get("raw"), None))
+                totals["incidencias"] += 1
+                totals["descartados"] += 1
             seen_ids = set()
             for row_num, raw in enumerate(rows, start=1):
                 if not isinstance(raw, dict):
                     raw = {}
                 mapped = map_row(source, raw)
-                ent_id = mapped.entity.get("id_entidad")
+                ent_id = mapped.entity.get("id_origen")
                 if ent_id and ent_id in seen_ids:
                     mapped.accepted = False
-                    mapped.note("id_entidad", "duplicado_lote", "error", "ID de origen duplicado en el mismo lote", ent_id)
+                    mapped.note("id_origen", "duplicado_lote", "error", "ID de origen duplicado en el mismo lote", ent_id)
                 if ent_id:
                     seen_ids.add(ent_id)
                 for issue in mapped.issues:
@@ -170,20 +183,21 @@ def process_source(source: str, rows: list[dict] | tuple[dict, ...], db_path=Non
                 raw_json = json.dumps(raw, ensure_ascii=False, sort_keys=True)
                 normalized_json = json.dumps([ent, loc_id, prov_id], ensure_ascii=False, sort_keys=True)
                 fingerprint = hashlib.sha256(normalized_json.encode("utf-8")).hexdigest()
-                previous = conn.execute("SELECT fingerprint FROM entidades WHERE id_entidad=?", (ent_id,)).fetchone()
+                previous = conn.execute("SELECT fingerprint FROM entidades WHERE fuente=? AND id_origen=?",
+                                        (source, ent_id)).fetchone()
                 if previous and previous["fingerprint"] == fingerprint:
                     totals["sin_cambios"] += 1
                     continue
-                columns = ["id_entidad", "fuente", "id_origen", "nombre", "ambito", "direccion", "codigo_postal",
+                columns = ["fuente", "id_origen", "nombre", "ambito", "direccion", "codigo_postal",
                            "longitud", "latitud", "descripcion", "contacto", "url", "localidad_id", "provincia_id",
                            "search_blob", "raw_json", "fingerprint", "actualizado_en"]
-                args = [ent["id_entidad"], ent["fuente"], ent["id_origen"], ent["nombre"],
+                args = [ent["fuente"], ent["id_origen"], ent["nombre"],
                         ent["ambito"], ent["direccion"], ent["codigo_postal"], ent["longitud"], ent["latitud"],
                         ent["descripcion"], ent["contacto"], ent["url"], loc_id, prov_id, haystack,
                         raw_json, fingerprint, _now()]
-                updates = ", ".join(f"{field}=excluded.{field}" for field in columns[1:])
+                updates = ", ".join(f"{field}=excluded.{field}" for field in columns[2:])
                 conn.execute(f"INSERT INTO entidades ({', '.join(columns)}) VALUES ({','.join('?' * len(columns))}) "
-                             f"ON CONFLICT(id_entidad) DO UPDATE SET {updates}", args)
+                             f"ON CONFLICT(fuente, id_origen) DO UPDATE SET {updates}", args)
                 if previous:
                     totals["actualizados"] += 1
                 else:
