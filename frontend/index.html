@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#12282d">
+  <title>Red Social · Buscador de entidades — IEI</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@9.2.4/ol.css">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="logo"><div class="logo-symbol">✳</div><div><strong>RED SOCIAL</strong><small>BUSCADOR DE ENTIDADES · IEI</small></div></div>
+  <div class="topright"><span class="status" id="connection"><i></i> Conectando</span>
+    <a class="api-link" href="/docs" target="_blank" rel="noopener">API Docs ↗</a></div>
+</header>
+<main>
+  <aside class="sidebar">
+    <div class="eyebrow">PLATAFORMA DE INTEGRACIÓN</div>
+    <h1>Encuentra una entidad social.</h1>
+    <p class="intro">Consulta organizaciones de tres comunidades desde una única aplicación.</p>
+    <div class="tabs" role="tablist" aria-label="Panel"><button id="tab-search" class="active" type="button" aria-selected="true">Explorar</button><button id="tab-load" type="button" aria-selected="false">Administrar datos</button></div>
+    <section id="search-panel">
+      <form id="search-form" autocomplete="off">
+        <label for="q">Nombre o palabra clave</label>
+        <div class="input-icon"><span>⌕</span><input id="q" name="q" placeholder="Ej. discapacidad, centro social..."></div>
+        <label for="municipio">Municipio / ciudad</label>
+        <input id="municipio" name="municipio" placeholder="Ej. València, Barcelona...">
+        <label for="provincia">Provincia</label>
+        <select id="provincia" name="provincia"><option value="">Todas las provincias</option></select>
+        <label for="ambito">Ámbito de actuación</label>
+        <select id="ambito" name="ambito"><option value="">Todos los ámbitos</option></select>
+        <label for="fuente">Origen de los datos</label>
+        <select id="fuente" name="fuente"><option value="">Todas las fuentes</option><option value="CV">Comunitat Valenciana</option><option value="CAT">Catalunya</option><option value="CAN">Canarias</option></select>
+        <label class="checkline"><input type="checkbox" id="map-only"> Limitar resultados al mapa visible <span title="Solo entidades con coordenadas">ⓘ</span></label>
+        <div class="form-actions"><button class="primary" type="submit">Buscar entidades →</button><button type="button" id="reset" class="light" title="Borrar filtros">Limpiar</button></div>
+      </form>
+      <div class="data-note"><strong>Datos integrados y trazables.</strong><br>Los centros sin coordenadas aparecen en los resultados, aunque no puedan situarse en el mapa.</div>
+    </section>
+    <section id="load-panel" hidden>
+      <div class="section-title">Carga e integración</div>
+      <p class="help">Ejecuta los extractores a través de los tres wrappers HTTP. Se muestran los errores y las reparaciones.</p>
+      <fieldset><legend>Selecciona las fuentes</legend>
+        <label class="checkline"><input checked id="load-cv" type="checkbox"> CV · CSV</label>
+        <label class="checkline"><input checked id="load-cat" type="checkbox"> CAT · XML</label>
+        <label class="checkline"><input checked id="load-can" type="checkbox"> CAN · JSON</label>
+      </fieldset>
+      <button class="primary full" type="button" id="load-btn">↻ &nbsp; Ejecutar carga ETL</button>
+      <div id="load-feedback" aria-live="polite"></div>
+      <div class="section-title history-title">Últimas cargas</div>
+      <div id="load-history" class="history"><p class="muted">Cargando historial...</p></div>
+      <div id="issue-section" hidden><div class="section-title history-title">Incidencias de la carga <span id="issue-count"></span></div><div><a id="issues-download" class="api-link export-link" href="#">↓ Descargar CSV completo</a></div><div id="issues"></div><button id="issues-next" class="light full" type="button">Mostrar más incidencias</button></div>
+    </section>
+    <div class="sidebar-bottom"><span>PROYECTO IEI · ENTREGA 2</span><span>2026–27</span></div>
+  </aside>
+  <section class="workspace">
+    <div class="overview">
+      <div class="metric"><span>ENTIDADES EN EL ALMACÉN</span><b id="stat-total">—</b></div>
+      <div class="metric"><span>CON COORDENADAS</span><b id="stat-geo">—</b></div>
+      <div class="metric"><span>FUENTES INTEGRADAS</span><b id="stat-sources">—</b></div>
+      <div class="overview-label"><span class="pulse"></span> Datos públicos integrados</div>
+    </div>
+    <div class="content">
+      <section class="map-section">
+        <div class="map-heading"><div><div class="eyebrow">VISTA GEOGRÁFICA</div><h2>Mapa de entidades</h2></div><div id="map-total" class="map-badge">— ubicaciones</div></div>
+        <div id="map" role="application" aria-label="Mapa interactivo de entidades"></div>
+        <div id="map-fallback" hidden>No se ha podido cargar OpenLayers o los mosaicos del mapa. El listado y las APIs siguen disponibles.</div>
+        <div class="map-bottom"><span>↗ Arrastra para explorar · rueda para acercar</span><button id="map-reset" type="button">Centrar mapa ⊕</button></div>
+      </section>
+      <section class="results-section">
+        <div class="results-header"><div class="eyebrow">RESULTADOS</div><h2><span id="result-total">—</span> entidades</h2><p id="results-description">Buscar en el catálogo unificado</p></div>
+        <div id="results" class="result-list" aria-live="polite"><div class="blank">Cargando entidades...</div></div>
+        <div class="results-footer"><button id="more" class="light full" type="button" hidden>Ver más resultados ↓</button><span id="results-count"></span></div>
+      </section>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="https://cdn.jsdelivr.net/npm/ol@9.2.4/dist/ol.js"></script>
+<script src="/static/app.js" defer></script>
+</body>
+</html>

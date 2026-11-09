@@ -1,0 +1,49 @@
+services:
+  can:
+    build: .
+    environment:
+      IEI_WRAPPER_SOURCE: CAN
+    command: uvicorn iei.wrapper:app --host 0.0.0.0 --port 8101
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8101/health')"]
+      interval: 5s
+      retries: 6
+  cat:
+    build: .
+    environment:
+      IEI_WRAPPER_SOURCE: CAT
+    command: uvicorn iei.wrapper:app --host 0.0.0.0 --port 8102
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8102/health')"]
+      interval: 5s
+      retries: 6
+  cv:
+    build: .
+    environment:
+      IEI_WRAPPER_SOURCE: CV
+    command: uvicorn iei.wrapper:app --host 0.0.0.0 --port 8103
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8103/health')"]
+      interval: 5s
+      retries: 6
+  integrador:
+    build: .
+    command: uvicorn iei.api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - iei_database:/app/data/db
+    environment:
+      IEI_DB_PATH: /app/data/db/integrador.sqlite3
+      IEI_WRAPPER_CAN_URL: http://can:8101
+      IEI_WRAPPER_CAT_URL: http://cat:8102
+      IEI_WRAPPER_CV_URL: http://cv:8103
+    depends_on:
+      can:
+        condition: service_healthy
+      cat:
+        condition: service_healthy
+      cv:
+        condition: service_healthy
+volumes:
+  iei_database:
