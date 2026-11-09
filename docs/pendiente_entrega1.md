@@ -54,7 +54,6 @@ Los casos de `data/samples/casos.json` marcados `pendiente` corresponden a esta 
 
 - [ ] Ejecutar la demo completa sobre `data/sources` y revisar el informe.
 - [ ] Repasar `docs/esquema_global.sql`, `docs/ETL_y_calidad.md` y `docs/arquitectura.md` tras los cambios (conversor, nuevas reparaciones).
-- [ ] Actualizar o retirar `SEMANTIC_MAPPINGS.md` y `OBJETIVOS.md`: contradicen el mapping entregado (ids, ámbitos con tilde, PostgreSQL).
 
 ## Después (Entrega 2, 07/01)
 
