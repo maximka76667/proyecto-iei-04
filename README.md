@@ -46,18 +46,60 @@ Desde esta carpeta:
    python -m pip install -r requirements.txt
    ```
 
-4. Ejecutar las pruebas y la demo:
+4. Ejecutar las pruebas:
 
    ```bash
    python -m pytest -q
-   python run_demo.py
    ```
+
+   Lo normal es ver todo en verde (`passed`) más varios `xfailed`. Los `xfailed` son casos de `data/samples/casos.json` marcados como **pendiente**: comportamiento acordado que aún no está implementado, así que se espera que fallen. Si alguno sale `XPASS` (pasa sin esperarlo), ya está implementado y hay que quitar su marca `pendiente`. Un `FAILED` sí es un error.
+
+   Para ver el detalle de un fichero: `python -m pytest tests/test_samples.py -v`.
+
+5. Ejecutar la demo de la Entrega 1 (wrappers → extracción por HTTP → mappings → carga → informe):
+
+   ```bash
+   python demo_entrega-1.py
+   ```
+
+   Arranca un wrapper HTTP por fuente (puertos **8101 CAN, 8102 CAT, 8103 CV**), extrae los registros por HTTP, aplica los mappings, carga en `data/demo_entrega-1.sqlite3` (se crea vacía en cada ejecución) e imprime qué ha pasado con cada registro: cargado, reparado, con datos inválidos, con avisos o rechazado. Al terminar detiene los wrappers.
+
+   | Opción | Efecto |
+   | --- | --- |
+   | `--sources CV CAT CAN` | Fuentes a cargar (por defecto, las tres) |
+   | `--data-dir CARPETA` | Carpeta con `cv.csv`, `cat.xml` y `can.json` (por defecto `data/sources`) |
+   | `--keep-db` | No vaciar la base de datos: al repetir la carga se ve que no duplica (“sin cambios”) |
+   | `--sample N` | Registros de ejemplo a mostrar por fuente (0 para ninguno) |
+   | `--db FICHERO` | Otra base de datos |
+   | `--no-color` | Sin colores, p. ej. para guardar la salida: `python demo_entrega-1.py --no-color > demo.txt` |
+
+   Ejemplos:
+
+   ```bash
+   python demo_entrega-1.py --data-dir data/samples     # muestras pequeñas con casos de error
+   python demo_entrega-1.py --sources CV --sample 0     # solo CV, sin registros de ejemplo
+   python demo_entrega-1.py --data-dir ruta/a/evaluacion  # ficheros de evaluación del profesor
+   ```
+
+   Si aparece «puerto ocupado», hay otro wrapper en marcha (p. ej. de `run_demo.py`): cerrarlo y repetir.
+
+### Datos de prueba (`data/samples`)
+
+`data/samples/` contiene versiones pequeñas de las tres fuentes, escritas a mano: registros reales copiados de `data/sources` (sin modificar los originales) más casos construidos para provocar un comportamiento concreto (filas ilegibles, ids vacíos o repetidos, códigos postales e INE inválidos, coordenadas ausentes o incoherentes, URLs y emails mal formados, marcadores `_U`, etc.).
+
+`data/samples/casos.json` describe qué se espera de cada caso; `tests/test_samples.py` ejecuta el mismo pipeline que la demo (`iei/pipeline.py`) sobre estas muestras y lo comprueba. Para añadir un caso: añadir el registro a la muestra correspondiente y su entrada en `casos.json` (la `fila` es la posición del registro, sin contar cabecera ni filas ilegibles).
+
+### Aplicación completa (Entrega 2)
+
+```bash
+python run_demo.py
+```
 
 Abrir **http://127.0.0.1:8000** en el navegador. Swagger interactivo: **http://127.0.0.1:8000/docs**.
 
 `run_demo.py` arranca 4 servidores HTTP, ejecuta automáticamente la carga de los 3 datasets y muestra los resultados. Para iniciar sin ejecutar una carga nueva: `python run_demo.py --no-load`. Para detener todos los servicios, `Ctrl+C`.
 
-> La base de datos `data/integrador.sqlite3` se incluye precargada como **snapshot de demostración**. Al cargar otra vez, el proceso es idempotente y comprueba registros sin cambios. Puedes borrar el fichero SQLite (con los servidores parados) para probar la primera carga desde cero.
+> La base de datos `data/integrador.sqlite3` no se versiona: se crea en la primera carga. Al cargar otra vez, el proceso es idempotente y comprueba registros sin cambios. Puedes borrar el fichero SQLite (con los servidores parados) para probar la primera carga desde cero.
 
 ## 2. Alternativa mediante Docker Compose
 
