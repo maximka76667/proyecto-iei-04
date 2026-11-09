@@ -9,6 +9,7 @@ esperan fallidos (xfail estricto). Cuando se implementen, el test avisa
 """
 import json
 import sqlite3
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -50,7 +51,12 @@ def _params():
     for source, info in MANIFEST.items():
         for case in info["casos"]:
             marks = [pytest.mark.xfail(strict=True, reason=case["pendiente"])] if case.get("pendiente") else []
-            yield pytest.param(source, case, id=f"{source}-{case['fila']}-{case['caso']}", marks=marks)
+            yield pytest.param(source, case, id=f"{source}-{case['fila']}-{_ascii(case['caso'])}", marks=marks)
+
+
+def _ascii(text):
+    """pytest escapa los caracteres no ASCII de los nombres de test (á -> \\xe1); se quitan las tildes."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
 
 
 @pytest.mark.parametrize("source,case", list(_params()))
