@@ -3,6 +3,7 @@
 Uso:
   python demo_entrega-1.py                    # CV, CAT y CAN, base de datos nueva
   python demo_entrega-1.py --sources CV
+  python demo_entrega-1.py --data-dir data/samples   # otra carpeta con cv.csv, cat.xml, can.json
   python demo_entrega-1.py --keep-db          # recarga sobre la BD existente (idempotencia)
   python demo_entrega-1.py --no-color         # sin colores (p. ej. al guardar en un fichero)
 
@@ -16,16 +17,17 @@ from __future__ import annotations
 import argparse
 import os
 import sqlite3
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 import httpx
 
+from iei import pipeline
+from iei.database import connect
+
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DB = ROOT / "data" / "demo_entrega-1.sqlite3"
-PORTS = {"CAN": 8101, "CAT": 8102, "CV": 8103}
+PORTS = pipeline.DEFAULT_PORTS
 SOURCE_NAMES = {"CV": "Comunitat Valenciana (CSV)", "CAT": "Catalunya (XML)", "CAN": "Canarias (JSON)"}
 # Códigos de incidencia que implican rechazar el registro entero.
 REJECT_CODES = {"id_obligatorio", "nombre_obligatorio", "duplicado_lote", "fila_ilegible"}
@@ -72,46 +74,6 @@ def ok(text: str) -> None:
 
 def pct(part: int, total: int) -> str:
     return f"{100 * part / total:5.1f} %" if total else "    - "
-
-
-# ------------------------------------------------------------- wrappers ---
-
-def start_wrapper(source: str) -> subprocess.Popen:
-    env = os.environ.copy()
-    env["IEI_WRAPPER_SOURCE"] = source
-    command = [sys.executable, "-m", "uvicorn", "iei.wrapper:app",
-               "--host", "127.0.0.1", "--port", str(PORTS[source]), "--log-level", "warning"]
-    return subprocess.Popen(command, cwd=ROOT, env=env,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-
-
-def wait_healthy(source: str, proc: subprocess.Popen, timeout: float = 20.0) -> dict:
-    url = f"http://127.0.0.1:{PORTS[source]}/health"
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            err = proc.stderr.read() if proc.stderr else ""
-            raise RuntimeError(f"El wrapper {source} terminó al arrancar "
-                               f"(¿puerto {PORTS[source]} ocupado?)\n{err}")
-        try:
-            response = httpx.get(url, timeout=2.0)
-            if response.status_code == 200:
-                return response.json()
-        except httpx.HTTPError:
-            pass
-        time.sleep(0.2)
-    raise RuntimeError(f"El wrapper {source} no respondió en {timeout:.0f} s")
-
-
-def stop(processes: list[subprocess.Popen]) -> None:
-    for proc in processes:
-        if proc.poll() is None:
-            proc.terminate()
-    for proc in processes:
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
 
 
 # -------------------------------------------------------------- informe ---
@@ -244,6 +206,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Demo de la Entrega 1 (ETL hasta el almacén).")
     parser.add_argument("--sources", nargs="+", choices=list(PORTS), default=["CV", "CAT", "CAN"],
                         help="Fuentes a cargar (por defecto: CV CAT CAN)")
+    parser.add_argument("--data-dir", type=Path, default=ROOT / "data" / "sources",
+                        help="Carpeta con cv.csv, cat.xml y can.json (por defecto data/sources)")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help=f"Base de datos (por defecto {DEFAULT_DB.name})")
     parser.add_argument("--keep-db", action="store_true",
                         help="No borrar la BD antes de cargar (para mostrar que recargar no duplica)")
@@ -253,13 +217,18 @@ def main() -> int:
     setup_output(args.no_color)
     sources = list(dict.fromkeys(args.sources))
 
-    # El extractor lee la URL de cada wrapper de estas variables de entorno.
-    for source in sources:
-        os.environ.setdefault(f"IEI_WRAPPER_{source}_URL", f"http://127.0.0.1:{PORTS[source]}")
-    from iei.database import connect, process_source
-    from iei.extractor import extract_http, extract_read_errors_http
+    data_dir = args.data_dir.resolve()
+    missing = pipeline.missing_files(data_dir, sources)
+    if missing:
+        print(paint(f"ERROR: faltan en {data_dir}: {', '.join(missing)}", Style.BOLD, Style.RED), file=sys.stderr)
+        return 1
 
     header("Demo Entrega 1 · Extracción, transformación y carga")
+    try:
+        shown_dir = data_dir.relative_to(ROOT)
+    except ValueError:
+        shown_dir = data_dir
+    print(f"  Datos:   {shown_dir}")
     if args.keep_db:
         print(f"  Almacén: {args.db.name} (se conserva lo cargado antes)")
     else:
@@ -267,49 +236,41 @@ def main() -> int:
             args.db.unlink()
         print(f"  Almacén: {args.db.name} (vacío, se crea de nuevo)")
 
-    processes: list[subprocess.Popen] = []
     results: list[tuple[str, dict]] = []
     try:
         step("Arrancando los wrappers (un servicio HTTP por fuente)")
-        for source in sources:
-            processes.append(start_wrapper(source))
-        for source, proc in zip(sources, processes):
-            health = wait_healthy(source, proc)
-            ok(f"{source:<4} http://127.0.0.1:{PORTS[source]}  · {health['records']} registros")
+        with pipeline.wrappers(sources, data_dir, ports=PORTS) as running:
+            for source in sources:
+                ok(f"{source:<4} {running[source].url}  · {running[source].records} registros")
 
-        for source in sources:
-            header(f"{source} · {SOURCE_NAMES[source]}")
+            for source in sources:
+                header(f"{source} · {SOURCE_NAMES[source]}")
+                step("Extracción por HTTP desde el wrapper, transformación (mappings) y carga en el almacén")
+                result = pipeline.extract_and_load(source, running[source].url, args.db)
+                ok(f"{result.received} registros recibidos del wrapper")
+                if result.read_errors:
+                    print("  " + paint("✗", Style.RED) + f" {result.read_errors} filas ilegibles en el fichero")
 
-            step("Extracción: el extractor pide los datos al wrapper por HTTP")
-            rows = extract_http(source)
-            read_errors = extract_read_errors_http(source)
-            ok(f"{len(rows)} registros recibidos")
-            if read_errors:
-                print("  " + paint("✗", Style.RED) + f" {len(read_errors)} filas ilegibles en el fichero")
-
-            step("Transformación (mappings semánticos) y carga en el almacén")
-            totals = process_source(source, rows, args.db, read_errors=read_errors)
-            conn = connect(args.db)
-            try:
-                counts = classify_records(conn, totals["carga_id"], totals)
-                counts["leidos"] = totals["leidos"]
-                print_record_summary(counts, totals)
-                print_issue_details(conn, totals["carga_id"])
-                if args.sample > 0:
-                    print_sample(conn, source, args.sample)
-            finally:
-                conn.close()
-            results.append((source, counts))
+                totals = result.totals
+                conn = connect(args.db)
+                try:
+                    counts = classify_records(conn, totals["carga_id"], totals)
+                    counts["leidos"] = totals["leidos"]
+                    print_record_summary(counts, totals)
+                    print_issue_details(conn, totals["carga_id"])
+                    if args.sample > 0:
+                        print_sample(conn, source, args.sample)
+                finally:
+                    conn.close()
+                results.append((source, counts))
 
         print_final_table(results)
-    except (RuntimeError, httpx.HTTPError, ValueError) as exc:
+    except (RuntimeError, httpx.HTTPError, ValueError, OSError) as exc:
         print("\n" + paint(f"ERROR: {exc}", Style.BOLD, Style.RED), file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("\nInterrumpido.")
         return 130
-    finally:
-        stop(processes)
     print("\n" + paint("Wrappers detenidos. Fin de la demo.", Style.DIM) + "\n")
     return 0
 

@@ -15,14 +15,15 @@ def wrapper_url(source: str) -> str:
     return os.environ.get("IEI_WRAPPER_" + source + "_URL", DEFAULT_WRAPPERS[source]).rstrip("/")
 
 
-def extract_http(source: str) -> list[dict]:
+def extract_http(source: str, base_url: str | None = None) -> list[dict]:
     """Extractor HTTP paginado. No consulta directamente el fichero original."""
+    base = (base_url or wrapper_url(source)).rstrip("/")
     result = []
     with httpx.Client(timeout=30.0, follow_redirects=False) as client:
         page = 1
         total = None
         while True:
-            response = client.get(wrapper_url(source) + "/records", params={"page": page, "page_size": 500})
+            response = client.get(base + "/records", params={"page": page, "page_size": 500})
             response.raise_for_status()
             data = response.json()
             if data.get("source") != source or not isinstance(data.get("records"), list):
@@ -43,10 +44,11 @@ def extract_http(source: str) -> list[dict]:
     return result
 
 
-def extract_read_errors_http(source: str) -> list[dict]:
+def extract_read_errors_http(source: str, base_url: str | None = None) -> list[dict]:
     """Filas que el wrapper no pudo leer (p. ej. número de columnas incorrecto)."""
+    base = (base_url or wrapper_url(source)).rstrip("/")
     with httpx.Client(timeout=30.0, follow_redirects=False) as client:
-        response = client.get(wrapper_url(source) + "/read-errors")
+        response = client.get(base + "/read-errors")
         response.raise_for_status()
         data = response.json()
     if data.get("source") != source or not isinstance(data.get("errors"), list):
