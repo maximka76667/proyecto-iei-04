@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 .venv/
 __pycache__/
 .pytest_cache/
@@ -6,7 +5,5 @@ __pycache__/
 .DS_Store
 .env
 # Si no se desea versionar la base de datos generada:
-# data/integrador.sqlite3
-=======
+data/integrador.sqlite3
 /data_sources
->>>>>>> 165045708201d6b4d630cafc27cee0d563907652

@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS localidades (
   provincia_id INTEGER REFERENCES provincias(id)
 );
 CREATE TABLE IF NOT EXISTS entidades (
-  id_entidad TEXT PRIMARY KEY,
+  id_entidad INTEGER PRIMARY KEY AUTOINCREMENT,
   fuente TEXT NOT NULL CHECK (fuente IN ('CAN','CAT','CV')),
   id_origen TEXT NOT NULL,
   nombre TEXT NOT NULL,
@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS entidades (
   raw_json TEXT NOT NULL,
   fingerprint TEXT NOT NULL,
   actualizado_en TEXT NOT NULL,
+  UNIQUE (fuente, id_origen),
   CHECK ((longitud IS NULL AND latitud IS NULL) OR
          (longitud BETWEEN -180 AND 180 AND latitud BETWEEN -90 AND 90))
 );

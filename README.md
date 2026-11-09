@@ -9,15 +9,49 @@ Requisitos: **Python 3.10+**, conexión a Internet para los mosaicos del mapa y 
 
 Desde esta carpeta:
 
-```bash
-python -m venv .venv
-# Linux / macOS:
-source .venv/bin/activate
-# Windows PowerShell:
-# .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python run_demo.py
-```
+1. Comprobar que pip está instalado (normalmente viene con Python):
+
+   ```bash
+   python -m pip --version
+   ```
+
+   Solo si responde `No module named pip`:
+
+   ```bash
+   python -m ensurepip --upgrade
+   ```
+
+2. Crear y activar el entorno virtual (`.venv/` está en `.gitignore`):
+
+   ```bash
+   python -m venv .venv
+   # Windows PowerShell:
+   .venv\Scripts\Activate.ps1
+   # Linux / macOS:
+   source .venv/bin/activate
+   ```
+
+   El prompt debe empezar por `(.venv)`. Si PowerShell responde que la ejecución de scripts está deshabilitada, ejecutar una vez lo siguiente y volver a activar:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+   ```
+
+   En cada terminal nueva hay que volver a activar el entorno.
+
+3. Instalar las dependencias:
+
+   ```bash
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
+   ```
+
+4. Ejecutar las pruebas y la demo:
+
+   ```bash
+   python -m pytest -q
+   python run_demo.py
+   ```
 
 Abrir **http://127.0.0.1:8000** en el navegador. Swagger interactivo: **http://127.0.0.1:8000/docs**.
 
