@@ -4,6 +4,6 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
-# Si no se desea versionar la base de datos generada:
-data/integrador.sqlite3
+# Bases de datos generadas (integrador y demo de la entrega 1):
+data/*.sqlite3
 /data_sources
